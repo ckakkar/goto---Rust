@@ -1,0 +1,5 @@
+error: this initializer appears after a forward `goto!()` and will never run — move the `let` after the target `label!()` to make the intent clear (`#[goto(strict)]` forbids this)
+ --> tests/ui/strict_after_forward_goto.rs:7:14
+  |
+7 |     let _y = expensive(); //~ ERROR this initializer appears after a forward `goto!()`
+  |              ^^^^^^^^^^^

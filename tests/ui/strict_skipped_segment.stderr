@@ -1,0 +1,5 @@
+error: this initializer would be hoisted to function entry and run unconditionally, even though a forward `goto!()` can bypass this segment entirely (`#[goto(strict)]` forbids this)
+  --> tests/ui/strict_skipped_segment.rs:10:17
+   |
+10 |     let _conn = expensive(); //~ ERROR would be hoisted to function entry
+   |                 ^^^^^^^^^^^

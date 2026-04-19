@@ -7,7 +7,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [Unreleased]
+## [0.2.0]
+
+### Added
+
+- **`#[goto(debug)]`** — prepends `println!("jumping to {}", "<label>")` to every
+  `goto!()` replacement at compile time, logging each state transition to stdout at
+  runtime. Intended for development tracing; has no effect on function results or
+  signature.
+- **`#[goto(strict)]`** — promotes two classes of forward-goto side-effect hazard to
+  compile errors:
+  - *Case A*: a `let` binding with a non-trivial initializer (function call, method
+    call, or macro invocation) appears *after* a forward `goto!()` in the same segment.
+    The code is unreachable, but its presence is misleading.
+  - *Case B*: a `let` binding with a non-trivial initializer appears in a labelled
+    segment that can be bypassed entirely by a forward `goto!()`. Because that binding
+    would be hoisted to function entry by the macro, its initializer runs
+    unconditionally — even on code paths that never visit the segment.
+- Attribute arguments are now parsed as a **comma-separated list**, so `debug` and
+  `strict` can be combined: `#[goto(debug, strict)]`.
+- Compile-fail test suite via `trybuild` covering both strict-mode error cases and
+  confirming that valid strict-mode code continues to compile.
 
 ---
 

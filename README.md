@@ -24,6 +24,8 @@ The macro desugars entirely at compile time into a state-machine loop. There is 
   - [Multiple labels — dispatch tables](#multiple-labels--dispatch-tables)
   - [Goto in if/else and match](#goto-in-ifelse-and-match)
   - [Generic functions](#generic-functions)
+  - [Debug mode](#debug-mode)
+  - [Strict mode](#strict-mode)
 - [API Reference](#api-reference)
   - [`#[goto]`](#goto-1)
   - [`label!(name)`](#labelname)
@@ -69,7 +71,7 @@ assert_eq!(count_up(5), 5);
 ## How It Works
 
 `#[goto]` is a **compile-time source rewrite** — the function body you write never
-executes as written. The macro performs seven transformation passes:
+executes as written. The macro performs eight transformation passes:
 
 ### Pass 1 — Segment splitting
 
@@ -88,33 +90,41 @@ fn foo() {           │  Segment 0: [stmt_a, stmt_b]
 }
 ```
 
-### Pass 2 — Variable hoisting
+### Pass 2 — Duplicate label detection
+
+Two `label!(foo)` calls in the same function produce a compile error pinpointing the
+duplicate.
+
+### Pass 3 — Label-to-index mapping
+
+Each label name is mapped to its segment index in a compile-time `HashMap`.
+
+### Pass 4 — Strict-mode hazard detection *(optional)*
+
+When `#[goto(strict)]` is active, the macro scans for two classes of forward-goto
+side-effect hazard and emits compile errors for each. See [Strict mode](#strict-mode).
+
+### Pass 5 — Variable hoisting
 
 `let` bindings that appear before the first `goto!()` in each segment are lifted above
 the state machine so they remain in scope across all segments. Bindings that appear
 *after* a `goto!()` are left in place (their initializers would never run anyway).
 
-### Pass 3 — Duplicate label detection
-
-Two `label!(foo)` calls in the same function produce a compile error pinpointing the
-duplicate.
-
-### Pass 4 — Label-to-index mapping
-
-Each label name is mapped to its segment index in a compile-time `HashMap`.
-
-### Pass 5 — `goto!()` replacement
+### Pass 6 — `goto!()` replacement
 
 Every `goto!(name)` becomes `{ __goto_state = N; continue 'goto_loop; }`, where `N`
 is the segment index for `name`. Undefined labels produce a compile error at the
 `goto!()` site.
 
-### Pass 6 — Tail expression conversion
+When `#[goto(debug)]` is active, a `println!("jumping to {}", "name")` is prepended
+to each replacement so every jump is logged at runtime.
+
+### Pass 7 — Tail expression conversion
 
 Implicit return expressions (tail expressions without a semicolon) are converted to
 explicit `return` statements so they remain valid inside a `match` arm.
 
-### Pass 7 — Code generation
+### Pass 8 — Code generation
 
 The transformed segments are assembled into:
 
@@ -177,6 +187,10 @@ fn skip_middle() -> Vec<&'static str> {
 
 assert_eq!(skip_middle(), vec!["first", "last"]);
 ```
+
+> **Note:** `let` bindings that appear *before* a forward `goto!()` in the same segment
+> are hoisted to function entry and will run even on the skipped path. See
+> [Known Limitations](#known-limitations) and [Strict mode](#strict-mode).
 
 ### Multiple labels — dispatch tables
 
@@ -257,6 +271,98 @@ fn linear_search<T: PartialEq>(haystack: &[T], needle: &T) -> bool {
 }
 ```
 
+### Debug mode
+
+`#[goto(debug)]` prints `jumping to <label>` to stdout on every `goto!()` invocation.
+The function still produces the same result; only a side-channel log is added. This is
+useful for tracing control flow during development without modifying the function body.
+
+```rust
+use goto::goto;
+
+#[goto(debug)]
+fn collatz_steps(mut n: u64) -> u64 {
+    let mut steps = 0;
+    label!(check);
+    if n == 1 { goto!(done); }          // prints "jumping to done"
+    if n % 2 == 0 { goto!(even); }     // prints "jumping to even"
+    n = 3 * n + 1;
+    steps += 1;
+    goto!(check);                        // prints "jumping to check"
+
+    label!(even);
+    n /= 2;
+    steps += 1;
+    goto!(check);                        // prints "jumping to check"
+
+    label!(done);
+    steps
+}
+```
+
+Remove the `debug` argument before shipping — it is intended for local development only.
+
+### Strict mode
+
+`#[goto(strict)]` turns forward-goto side-effect hazards into **compile errors**. This
+catches two patterns that silently misbehave under the default mode:
+
+#### Case A — initializer after a forward goto
+
+A `let` binding with a non-trivial initializer that appears *after* a forward `goto!()`
+in the same segment is unreachable, but its presence is misleading and almost certainly
+a bug:
+
+```rust
+// Does not compile with #[goto(strict)]:
+#[goto(strict)]
+fn example(x: i32) -> i32 {
+    goto!(end);
+    let _y = expensive_io(); // ERROR: unreachable after a forward goto!()
+    label!(end);
+    x
+}
+```
+
+Fix: move the `let` after `label!(end)`, or remove it.
+
+#### Case B — hoisted initializer in a bypassed segment
+
+When a segment is jumped over entirely, its hoistable `let` bindings are lifted to
+function entry by the macro and run unconditionally — even on the path that bypasses
+that segment:
+
+```rust
+// Does not compile with #[goto(strict)]:
+#[goto(strict)]
+fn example() -> i32 {
+    goto!(end);
+
+    label!(middle);
+    let _conn = open_db(); // ERROR: hoisted, runs at function entry even when skipped
+    goto!(end);
+
+    label!(end);
+    0
+}
+```
+
+Fix: move `let _conn = open_db()` to after `label!(end)`, or restructure so `open_db()`
+is only called on paths that actually use `_conn`.
+
+An initializer is considered *non-trivial* (and thus flagged) if it contains any
+function call, method call, or macro invocation. Plain integer or string literals and
+simple variable paths are always accepted.
+
+#### Combining modes
+
+`debug` and `strict` can be used together:
+
+```rust
+#[goto(debug, strict)]
+fn my_fn() { /* … */ }
+```
+
 ---
 
 ## API Reference
@@ -265,6 +371,9 @@ fn linear_search<T: PartialEq>(haystack: &[T], needle: &T) -> bool {
 
 ```
 #[goto]
+#[goto(debug)]
+#[goto(strict)]
+#[goto(debug, strict)]
 fn your_function(/* params */) -> ReturnType {
     /* body */
 }
@@ -273,6 +382,14 @@ fn your_function(/* params */) -> ReturnType {
 Attribute macro. Apply to any `fn` item — regular, `unsafe`, or generic. Rewrites the
 entire function body into a state machine. The rewrite is transparent to the caller;
 the function signature is unchanged.
+
+**Arguments** (comma-separated, all optional):
+
+| Argument | Effect |
+|----------|--------|
+| *(none)* | Standard behaviour. |
+| `debug`  | Emits `println!("jumping to {}", "<label>")` before each state transition at runtime. Intended for development; remove before release. |
+| `strict` | Promotes forward-goto side-effect hazards to compile errors. Recommended for any code where correctness under forward jumps matters. |
 
 ### `label!(name)`
 
@@ -308,6 +425,9 @@ The macro produces clear compile-time diagnostics for all misuse:
 | Two `label!(foo)` in same function | ``duplicate label: `foo` `` |
 | `goto!()` inside a closure | `` `goto!()` inside a closure is not supported `` |
 | Malformed `label!(123)` | `invalid label!() syntax: expected an identifier` |
+| Unknown attribute argument | ``unknown attribute `xyz` — expected `debug` or `strict` `` |
+| `strict`: non-trivial `let` after forward `goto!()` | `this initializer appears after a forward goto!() and will never run` |
+| `strict`: hoisted non-trivial `let` in bypassed segment | `this initializer would be hoisted to function entry and run unconditionally` |
 
 ---
 
@@ -328,8 +448,11 @@ run at function entry (they were hoisted to keep the variables in scope). If an
 initializer has observable side effects (I/O, allocation, etc.) and is placed after a
 `goto!()`, it will execute even when the surrounding code is skipped.
 
-To avoid this, use uninitialised declarations (`let x;`) and assign inside each segment
-where needed, or restructure so side-effecting initialisers appear before any `goto!()`.
+To avoid this:
+
+- Use `#[goto(strict)]` — it turns both hoisting hazard patterns into compile errors.
+- Use uninitialised declarations (`let x;`) and assign inside each segment where needed.
+- Restructure so side-effecting initialisers appear before any `goto!()`.
 
 ### Borrow checker conflicts
 
@@ -362,6 +485,9 @@ Use in `const fn` is at your own risk.
 | `goto!()` in `if`/`else` | ✅ Supported |
 | `goto!()` in `match` arm | ✅ Supported |
 | Void functions (no return type) | ✅ Supported |
+| `#[goto(debug)]` | ✅ Supported |
+| `#[goto(strict)]` | ✅ Supported |
+| `#[goto(debug, strict)]` | ✅ Supported |
 | `async fn` | ⚠️ Untested |
 | `const fn` | ⚠️ Untested |
 | `goto!()` inside a closure | ❌ Compile error (by design) |
@@ -377,6 +503,10 @@ The state machine the macro generates is intentionally simple. In straightforwar
 optimises it to the same assembly as an equivalent hand-written `loop`. In more complex
 cases with many labels and wide `match` arms, there may be a small overhead; profile if
 it matters.
+
+`#[goto(debug)]` adds one `println!` call per `goto!()` invocation. This involves a
+heap allocation and a write syscall per jump; do not use it in performance-sensitive
+paths or production builds.
 
 The compile-time cost of the macro itself is proportional to the size of the function
 body and is negligible in practice.

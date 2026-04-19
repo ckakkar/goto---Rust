@@ -1,4 +1,5 @@
 use goto::goto;
+extern crate trybuild;
 
 // ── Basic fixtures ────────────────────────────────────────────────────────────
 
@@ -126,6 +127,19 @@ fn sign(x: i32) -> &'static str {
     label!(neg); return "negative";
 }
 
+// ── Debug mode ───────────────────────────────────────────────────────────────
+
+#[goto(debug)]
+fn count_up_debug(limit: i32) -> i32 {
+    let mut n = 0;
+    label!(top);
+    n += 1;
+    if n < limit {
+        goto!(top);
+    }
+    n
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -192,4 +206,44 @@ fn test_sign() {
     assert_eq!(sign(42),  "positive");
     assert_eq!(sign(-1),  "negative");
     assert_eq!(sign(0),   "zero");
+}
+
+#[test]
+fn test_debug_mode() {
+    // Verifies #[goto(debug)] still produces correct results (output goes to stdout).
+    assert_eq!(count_up_debug(3), 3);
+}
+
+// ── Strict mode: valid code still compiles ────────────────────────────────────
+
+#[goto(strict)]
+fn strict_skip_safe() -> i32 {
+    goto!(end);
+    label!(end);
+    42
+}
+
+#[goto(strict)]
+fn strict_backward_ok(limit: i32) -> i32 {
+    let mut n = 0;
+    label!(top);
+    n += 1;
+    if n < limit { goto!(top); }
+    n
+}
+
+#[test]
+fn test_strict_valid_code() {
+    assert_eq!(strict_skip_safe(), 42);
+    assert_eq!(strict_backward_ok(4), 4);
+}
+
+// ── Strict mode: invalid patterns rejected at compile time ───────────────────
+
+#[test]
+fn test_strict_compile_errors() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("tests/ui/strict_after_forward_goto.rs");
+    t.compile_fail("tests/ui/strict_skipped_segment.rs");
+    t.pass("tests/ui/strict_ok.rs");
 }
