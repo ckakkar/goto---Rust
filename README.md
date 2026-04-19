@@ -44,7 +44,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-goto = "0.1"
+goto = "0.3"
 ```
 
 ---
@@ -109,6 +109,11 @@ side-effect hazard and emits compile errors for each. See [Strict mode](#strict-
 `let` bindings that appear before the first `goto!()` in each segment are lifted above
 the state machine so they remain in scope across all segments. Bindings that appear
 *after* a `goto!()` are left in place (their initializers would never run anyway).
+
+The scan continues past non-`let`, non-`goto!()` statements (expression statements), so
+a `let` that appears *after* an expression statement but *before* the first `goto!()` in
+the same segment is still hoisted. The expression runs normally inside its state-machine
+arm; the variable must be visible to later segments, so hoisting is required.
 
 ### Pass 6 — `goto!()` replacement
 
@@ -351,8 +356,17 @@ Fix: move `let _conn = open_db()` to after `label!(end)`, or restructure so `ope
 is only called on paths that actually use `_conn`.
 
 An initializer is considered *non-trivial* (and thus flagged) if it contains any
-function call, method call, or macro invocation. Plain integer or string literals and
-simple variable paths are always accepted.
+function call, method call, or macro invocation — **except** for known pure macros
+(`vec![]`, `matches!`, `concat!`, `stringify!`), which are always accepted. Plain
+integer or string literals and simple variable paths are also always accepted.
+
+```rust
+// Allowed — vec![] is whitelisted as a pure macro:
+let v = vec![1, 2, 3];
+
+// Flagged — open_db() is a function call with observable side effects:
+let _conn = open_db();
+```
 
 #### Combining modes
 

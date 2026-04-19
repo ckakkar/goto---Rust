@@ -1,0 +1,41 @@
+
+**Issues Worth Fixing**
+
+Phase 5 hoisting has a logic gap:
+
+```rust
+while i < stmts.len() {
+    match &stmts[i] {
+        Stmt::Local(_) => {
+            hoisted.push(stmts.remove(i));
+        }
+        Stmt::Macro(m) if m.mac.path.is_ident("goto") => break,
+        _ => i += 1,  // ← skips non-local, non-goto stmts, keeps incrementing
+    }
+}
+```
+
+This means `let` bindings *after* a non-goto, non-let statement (e.g. an expression statement) in the same segment won't be hoisted. Whether that's intentional isn't documented. If segment is `[expr_stmt, let x = ..., goto!(...)]`, `x` doesn't get hoisted and will be out of scope in later segments. Needs either a comment justifying it or a fix to continue scanning past non-let statements.
+
+**`has_side_effects` is too conservative**
+
+```rust
+fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {
+    self.0 = true;
+}
+```
+
+`vec![]`, `format!()`, `panic!()` all trigger this. That means in strict mode:
+
+```rust
+let v = vec![1, 2, 3]; // flagged — probably not what the user expects
+```
+
+Should at minimum whitelist known pure macros (`vec!`, `matches!`, `concat!`, `stringify!`), or document the conservative stance explicitly in the strict mode docs so users aren't surprised.
+
+**Minor**
+
+- `combine_errors` could use `errors.into_iter()` instead of `.iter()` to avoid cloning inside `to_compile_error()`
+- `GotoInClosureFinder::visit_expr` shadows the trait method with a non-trait inherent method — compiles fine but is confusing. Rename the inherent one to `check_expr` or similar
+- Phase numbering in comments goes 1–8 but the doc comment in `goto` says 7 transformation passes — stale from before 0.2 added the strict phase
+

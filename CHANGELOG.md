@@ -7,6 +7,42 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.3.0] — 2026-04-20
+
+### Fixed
+
+- **Phase 5 hoisting — documented scan-past-expression-statements behaviour.**
+  The Phase 5 loop continues past non-`let`, non-`goto!()` statements (expression
+  statements), meaning a `let` that follows an expression but precedes the first
+  `goto!()` in a segment is still hoisted. This was always the intended behaviour, but
+  it was undocumented and the code lacked a comment, making the logic look like a bug.
+  A clarifying comment has been added; the semantics are unchanged.
+
+- **`has_side_effects` — whitelist known pure macros.**
+  Previously every macro invocation in a `let` initializer triggered a strict-mode
+  compile error, including `vec![]`, `matches!`, `concat!`, and `stringify!`. These
+  macros have no observable side effects, so flagging them surprised users. They are now
+  whitelisted; all other macro invocations remain conservatively treated as non-trivial.
+
+- **`combine_errors` — avoid unnecessary clone.**
+  `errors.iter()` required each `syn::Error` to clone its token stream inside
+  `to_compile_error()`. Changed to `errors.into_iter()` so the owned value is consumed
+  directly instead.
+
+- **`GotoInClosureFinder` — rename inherent `visit_expr` to `check_expr`.**
+  The struct had an inherent method named `visit_expr` and also implemented the
+  `syn::visit::Visit` trait, which defines a method with the same name. Both compiled
+  fine (the trait impl delegated to the inherent method), but the duplicate name was
+  confusing. The inherent method is now named `check_expr`; the trait impl's
+  `visit_expr` calls `self.check_expr(…)`.
+
+- **Phase count in doc comment — updated to 8.**
+  The `#[goto]` attribute's doc comment previously listed 7 transformation passes;
+  the strict-mode phase (Phase 4) added in 0.2 brought the total to 8. The doc comment
+  now correctly states 8 passes.
+
+---
+
 ## [0.2.0]
 
 ### Added
@@ -52,5 +88,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Comprehensive integration test suite covering all supported patterns.
 - Full API documentation on docs.rs.
 
-[Unreleased]: https://github.com/Yujiro/goto/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Yujiro/goto/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Yujiro/goto/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/Yujiro/goto/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Yujiro/goto/releases/tag/v0.1.0

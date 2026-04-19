@@ -121,8 +121,9 @@ use syn::{
 /// ```
 ///
 /// An initializer is considered *non-trivial* (and thus flagged) if it contains any
-/// function call, method call, or macro invocation. Plain literals and variable paths
-/// are always accepted.
+/// function call, method call, or macro invocation — **except** for known pure macros
+/// (`vec!`, `matches!`, `concat!`, `stringify!`), which are always accepted.
+/// Plain literals and variable paths are also always accepted.
 ///
 /// # Example — backward goto (loop)
 ///
@@ -389,6 +390,12 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     // segment.  Lets after a goto would be unreachable, and hoisting their
     // initializers would cause side effects to run at function entry — wrong for
     // forward-goto patterns like `goto!(end); let x = side_effect();`.
+    //
+    // The scan intentionally continues past non-let, non-goto statements (e.g.
+    // expression statements), so a `let` that appears *after* an expression but
+    // *before* the first `goto!()` in the same segment is still hoisted.  The
+    // expression runs inside its state-machine arm as normal; the variable must
+    // be in scope for all subsequent segments, so it has to be hoisted.
     let mut hoisted: Vec<Stmt> = Vec::new();
     for (_, stmts) in &mut segments {
         let mut i = 0;
@@ -396,6 +403,7 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
             match &stmts[i] {
                 Stmt::Local(_) => {
                     hoisted.push(stmts.remove(i));
+                    // Do not increment i — after remove the next stmt slides into position i.
                 }
                 Stmt::Macro(m) if m.mac.path.is_ident("goto") => break,
                 _ => i += 1,
@@ -530,7 +538,7 @@ impl VisitMut for GotoReplacer<'_> {
     // We detect this case explicitly and emit a clear diagnostic instead.
     fn visit_expr_closure_mut(&mut self, closure: &mut ExprClosure) {
         let mut finder = GotoInClosureFinder { span: None };
-        finder.visit_expr(&closure.body);
+        finder.check_expr(&closure.body);
         if let Some(span) = finder.span {
             self.errors.push(syn::Error::new(
                 span,
@@ -609,7 +617,8 @@ struct GotoInClosureFinder {
 }
 
 impl GotoInClosureFinder {
-    fn visit_expr(&mut self, expr: &Expr) {
+    // Separate from the Visit trait method to avoid shadowing confusion.
+    fn check_expr(&mut self, expr: &Expr) {
         if self.span.is_some() {
             return;
         }
@@ -626,7 +635,7 @@ impl GotoInClosureFinder {
 
 impl<'ast> syn::visit::Visit<'ast> for GotoInClosureFinder {
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        self.visit_expr(expr);
+        self.check_expr(expr);
     }
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
@@ -680,8 +689,18 @@ fn has_side_effects(expr: &syn::Expr) -> bool {
         fn visit_expr_method_call(&mut self, _: &'ast syn::ExprMethodCall) {
             self.0 = true;
         }
-        fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {
-            self.0 = true;
+        fn visit_expr_macro(&mut self, m: &'ast syn::ExprMacro) {
+            // Whitelist macros that are known to be side-effect-free so that
+            // `let v = vec![1, 2, 3]` and similar are not flagged in strict mode.
+            const PURE_MACROS: &[&str] = &["vec", "matches", "concat", "stringify"];
+            let is_pure = m
+                .mac
+                .path
+                .get_ident()
+                .map_or(false, |id| PURE_MACROS.contains(&id.to_string().as_str()));
+            if !is_pure {
+                self.0 = true;
+            }
         }
     }
     let mut f = Finder(false);
@@ -690,6 +709,6 @@ fn has_side_effects(expr: &syn::Expr) -> bool {
 }
 
 fn combine_errors(errors: Vec<syn::Error>) -> TokenStream {
-    let ts: TokenStream2 = errors.iter().map(|e| e.to_compile_error()).collect();
+    let ts: TokenStream2 = errors.into_iter().map(|e| e.to_compile_error()).collect();
     ts.into()
 }
