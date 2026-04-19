@@ -16,7 +16,7 @@
 //! # Quick start
 //!
 //! ```rust
-//! use goto::goto;
+//! use gotobykkrwhofrags::goto;
 //!
 //! #[goto]
 //! fn count_up(limit: i32) -> i32 {
@@ -87,7 +87,7 @@ use syn::{
 /// **Case A — unreachable initializer after a forward goto:**
 ///
 /// ```compile_fail
-/// use goto::goto;
+/// use gotobykkrwhofrags::goto;
 ///
 /// #[goto(strict)]
 /// fn bad(x: i32) -> i32 {
@@ -106,7 +106,7 @@ use syn::{
 /// visits that segment.
 ///
 /// ```compile_fail
-/// use goto::goto;
+/// use gotobykkrwhofrags::goto;
 ///
 /// #[goto(strict)]
 /// fn bad() -> i32 {
@@ -128,7 +128,7 @@ use syn::{
 /// # Example — backward goto (loop)
 ///
 /// ```rust
-/// use goto::goto;
+/// use gotobykkrwhofrags::goto;
 ///
 /// #[goto]
 /// fn count_up(limit: i32) -> i32 {
@@ -145,7 +145,7 @@ use syn::{
 /// # Example — forward goto (skip)
 ///
 /// ```rust
-/// use goto::goto;
+/// use gotobykkrwhofrags::goto;
 ///
 /// #[goto]
 /// fn skip_middle() -> Vec<&'static str> {
@@ -163,7 +163,7 @@ use syn::{
 /// # Example — multiple labels (dispatch table)
 ///
 /// ```rust
-/// use goto::goto;
+/// use gotobykkrwhofrags::goto;
 ///
 /// #[goto]
 /// fn fizzbuzz_once(n: i32) -> &'static str {
@@ -182,7 +182,7 @@ use syn::{
 /// # Example — debug mode
 ///
 /// ```rust
-/// use goto::goto;
+/// use gotobykkrwhofrags::goto;
 ///
 /// #[goto(debug)]
 /// fn count_up_debug(limit: i32) -> i32 {

@@ -1,7 +1,7 @@
-# goto
+# gotobykkrwhofrags
 
-[![Crates.io](https://img.shields.io/crates/v/goto.svg)](https://crates.io/crates/goto)
-[![Docs.rs](https://docs.rs/goto/badge.svg)](https://docs.rs/goto)
+[![Crates.io](https://img.shields.io/crates/v/gotobykkrwhofrags.svg)](https://crates.io/crates/gotobykkrwhofrags)
+[![Docs.rs](https://docs.rs/gotobykkrwhofrags/badge.svg)](https://docs.rs/gotobykkrwhofrags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![MSRV: 1.61](https://img.shields.io/badge/MSRV-1.61-orange.svg)](https://blog.rust-lang.org/2022/05/19/Rust-1.61.0.html)
 
@@ -44,7 +44,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-goto = "0.3"
+gotobykkrwhofrags = "0.3.5"
 ```
 
 ---
@@ -52,7 +52,7 @@ goto = "0.3"
 ## Quick Start
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn count_up(limit: i32) -> i32 {
@@ -157,7 +157,7 @@ fn your_function(/* … */) -> T {
 Build loops using a backward jump:
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn sum_to(n: i32) -> i32 {
@@ -178,7 +178,7 @@ assert_eq!(sum_to(4), 10); // 1 + 2 + 3 + 4
 Jump forward to skip over a block:
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn skip_middle() -> Vec<&'static str> {
@@ -203,7 +203,7 @@ Multiple labels create a dispatch table — a common pattern in hand-written int
 state machines, and ports of legacy code:
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn fizzbuzz_once(n: i32) -> &'static str {
@@ -225,7 +225,7 @@ fn fizzbuzz_once(n: i32) -> &'static str {
 and `match` arms:
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn classify(x: i32) -> &'static str {
@@ -239,7 +239,7 @@ fn classify(x: i32) -> &'static str {
 ```
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn from_code(code: u8) -> &'static str {
@@ -260,7 +260,7 @@ fn from_code(code: u8) -> &'static str {
 `#[goto]` composes naturally with generic parameters and where clauses:
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto]
 fn linear_search<T: PartialEq>(haystack: &[T], needle: &T) -> bool {
@@ -283,7 +283,7 @@ The function still produces the same result; only a side-channel log is added. T
 useful for tracing control flow during development without modifying the function body.
 
 ```rust
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 #[goto(debug)]
 fn collatz_steps(mut n: u64) -> u64 {

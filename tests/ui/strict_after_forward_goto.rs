@@ -1,4 +1,4 @@
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 // Case A: non-trivial `let` appearing after a forward `goto!()` in the same segment.
 #[goto(strict)]

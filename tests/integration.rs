@@ -1,4 +1,4 @@
-use goto::goto;
+use gotobykkrwhofrags::goto;
 extern crate trybuild;
 
 // ── Basic fixtures ────────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 // Case B: non-trivial `let` in a segment entirely skipped by a forward goto.
 // The hoisting would make expensive() run at function entry unconditionally.

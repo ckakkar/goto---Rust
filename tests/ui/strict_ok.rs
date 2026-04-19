@@ -1,4 +1,4 @@
-use goto::goto;
+use gotobykkrwhofrags::goto;
 
 // Trivial inits (literals, paths) are always fine in strict mode.
 #[goto(strict)]
