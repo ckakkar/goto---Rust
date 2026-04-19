@@ -2,11 +2,19 @@
 name = "goto"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.61"
+authors = ["Cyrus Kakkar <cyruskakkar@gmail.com>"]
+description = "A procedural macro that adds C-style goto to Rust via label!() and goto!() macros."
+license = "MIT"
+repository = "https://github.com/Yujiro/goto"
+keywords = ["goto", "label", "proc-macro", "control-flow", "state-machine"]
+categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
+readme = "README.md"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-syn = { version = "2", features = ["full", "visit-mut"] }
+syn = { version = "2", features = ["full", "visit-mut", "visit"] }
 quote = "1"
 proc-macro2 = "1"
