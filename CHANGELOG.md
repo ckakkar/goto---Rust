@@ -7,7 +7,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [0.4.1] — 2026-04-20
+## [0.4.2] — 2026-04-20
 
 ### Changed
 
@@ -144,7 +144,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Comprehensive integration test suite covering all supported patterns.
 - Full API documentation on docs.rs.
 
-[Unreleased]: https://github.com/ckakkar/goto---Rust/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/ckakkar/goto---Rust/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/ckakkar/goto---Rust/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ckakkar/goto---Rust/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ckakkar/goto---Rust/compare/v0.3.5...v0.4.0
 [0.3.5]: https://github.com/ckakkar/goto---Rust/compare/v0.3.0...v0.3.5
