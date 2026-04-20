@@ -1,0 +1,28 @@
+name: Bug report
+description: Report incorrect behavior, panic, or compile error.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Provide a small example with `#[goto]`.
+      render: rust
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Environment
+      description: Rust version, OS, crate version.
+      placeholder: rustc --version, cargo --version, OS, gotobykkrwhofrags version
+    validations:
+      required: true

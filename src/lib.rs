@@ -32,7 +32,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
-use quote::quote;
+use quote::{format_ident, quote};
 use std::collections::HashMap;
 use syn::{
     parse_macro_input,
@@ -97,27 +97,6 @@ use syn::{
 ///     x
 /// }
 /// # fn expensive() -> i32 { 0 }
-/// ```
-///
-/// **Case B — hoisted initializer in a bypassed segment:**
-///
-/// When an entire labelled segment is jumped over, its hoistable `let` bindings are
-/// lifted to function entry and run unconditionally — even on the path that never
-/// visits that segment.
-///
-/// ```compile_fail
-/// use gotobykkrwhofrags::goto;
-///
-/// #[goto(strict)]
-/// fn bad() -> i32 {
-///     goto!(end);
-///     label!(middle);
-///     let _conn = open_db(); // ERROR: hoisted, runs even when skipped
-///     goto!(end);
-///     label!(end);
-///     0
-/// }
-/// # fn open_db() -> i32 { 0 }
 /// ```
 ///
 /// An initializer is considered *non-trivial* (and thus flagged) if it contains any
@@ -213,7 +192,9 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
                         other => {
                             return syn::Error::new(
                                 ident.span(),
-                                format!("unknown attribute `{other}` — expected `debug` or `strict`"),
+                                format!(
+                                    "unknown attribute `{other}` — expected `debug` or `strict`"
+                                ),
                             )
                             .to_compile_error()
                             .into();
@@ -260,13 +241,19 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     for (label_opt, _) in &segments {
         if let Some(label) = label_opt {
             let name = label.to_string();
-            if seen.contains_key(&name) {
-                dup_errors.push(syn::Error::new(
-                    label.span(),
-                    format!("duplicate label: `{name}` — each label must be unique within a #[goto] function"),
-                ));
-            } else {
-                seen.insert(name, label.span());
+            use std::collections::hash_map::Entry;
+            match seen.entry(name.clone()) {
+                Entry::Occupied(_) => {
+                    dup_errors.push(syn::Error::new(
+                        label.span(),
+                        format!(
+                            "duplicate label: `{name}` — each label must be unique within a #[goto] function"
+                        ),
+                    ));
+                }
+                Entry::Vacant(v) => {
+                    v.insert(label.span());
+                }
             }
         }
     }
@@ -287,13 +274,10 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     //   A. A `let` with a non-trivial init appears *after* a forward goto in the
     //      same segment — unreachable, but misleading and likely a bug.
     //   B. A `let` with a non-trivial init appears in a segment that is entirely
-    //      skipped by a forward goto.  The hoisting in Phase 5 would move that
-    //      initializer to function entry, causing a side effect the caller never
-    //      intended to trigger on the skipped path.
+    //      skipped by a forward goto. The hoisting in Phase 5 would move that
+    //      initializer to function entry, causing a side effect on a skipped path.
     if strict {
         let mut strict_errors: Vec<syn::Error> = Vec::new();
-
-        // Helper: collect all forward gotos in a stmt list as (source_seg, target_seg).
         let forward_gotos_in = |seg_idx: usize, stmts: &[Stmt]| -> Vec<usize> {
             stmts
                 .iter()
@@ -313,8 +297,6 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
                 })
                 .collect()
         };
-
-        // Case A: non-trivial `let` appearing after a forward goto in the same segment.
         for (seg_idx, (_, stmts)) in segments.iter().enumerate() {
             let mut past_forward_goto = false;
             for stmt in stmts {
@@ -344,10 +326,6 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         }
-
-        // Case B: non-trivial hoistable `let` in a segment skipped by a forward goto.
-        // The hoisting in Phase 5 would lift the initializer to function entry, running
-        // it even on code paths that never pass through that segment.
         let mut skipped: std::collections::HashSet<usize> = std::collections::HashSet::new();
         for (seg_idx, (_, stmts)) in segments.iter().enumerate() {
             for target in forward_gotos_in(seg_idx, stmts) {
@@ -360,7 +338,6 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
             let (_, stmts) = &segments[k];
             for stmt in stmts {
                 match stmt {
-                    // Lets before the first goto in the segment would be hoisted.
                     Stmt::Macro(StmtMacro { mac, .. }) if mac.path.is_ident("goto") => break,
                     Stmt::Local(local) => {
                         if let Some(init) = &local.init {
@@ -386,10 +363,18 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // ── Phase 5: hoist let-bindings before the state machine ──────────────────
     //
-    // Only hoists lets that appear *before* the first top-level goto!() in each
-    // segment.  Lets after a goto would be unreachable, and hoisting their
-    // initializers would cause side effects to run at function entry — wrong for
-    // forward-goto patterns like `goto!(end); let x = side_effect();`.
+    // Hoists lets that appear *before* the first top-level goto!() in each
+    // segment so variables stay visible across segment boundaries.
+    //
+    // To preserve runtime behavior and shadowing semantics:
+    // - each hoisted binding is alpha-renamed to a unique internal symbol, and
+    // - each initialized local gets:
+    //     (hoisted)   `let mut __goto_hoisted_x_N = init;`
+    //     (hoisted)   `let mut __goto_seen_x_N = false;`
+    //     (in place)  `if __goto_seen_x_N { __goto_hoisted_x_N = init; } else { __goto_seen_x_N = true; }`
+    //
+    // This avoids collisions between shadowed names and makes initializers run
+    // again when the same statement is reached on later jumps.
     //
     // The scan intentionally continues past non-let, non-goto statements (e.g.
     // expression statements), so a `let` that appears *after* an expression but
@@ -397,22 +382,96 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     // expression runs inside its state-machine arm as normal; the variable must
     // be in scope for all subsequent segments, so it has to be hoisted.
     let mut hoisted: Vec<Stmt> = Vec::new();
+    let mut active_bindings: HashMap<String, Ident> = HashMap::new();
+    let mut hoist_counter: usize = 0;
+
     for (_, stmts) in &mut segments {
-        let mut i = 0;
-        while i < stmts.len() {
-            match &stmts[i] {
-                Stmt::Local(_) => {
-                    hoisted.push(stmts.remove(i));
-                    // Do not increment i — after remove the next stmt slides into position i.
+        let mut before_first_goto = true;
+        for stmt in stmts.iter_mut() {
+            if before_first_goto {
+                if let Some(local) = as_hoistable_local(stmt) {
+                    rewrite_local_initializer(local, &active_bindings);
+
+                    if let Some((orig_ident, mutability, ty_opt)) =
+                        extract_simple_local_binding(local)
+                    {
+                        let internal_ident = format_ident!(
+                            "__goto_hoisted_{}_{}",
+                            orig_ident,
+                            hoist_counter,
+                            span = orig_ident.span()
+                        );
+                        hoist_counter += 1;
+
+                        let mut_token: Option<syn::Token![mut]> =
+                            mutability.or(Some(Default::default()));
+
+                        if let Some(init) = local.init.take() {
+                            let init_expr = *init.expr;
+                            let seen_ident = format_ident!(
+                                "__goto_seen_{}_{}",
+                                orig_ident,
+                                hoist_counter - 1,
+                                span = orig_ident.span()
+                            );
+                            let hoisted_decl = if let Some(ty) = ty_opt {
+                                syn::parse_quote! {
+                                    let #mut_token #internal_ident: #ty = #init_expr;
+                                }
+                            } else {
+                                syn::parse_quote! {
+                                    let #mut_token #internal_ident = #init_expr;
+                                }
+                            };
+                            hoisted.push(hoisted_decl);
+                            hoisted.push(syn::parse_quote! { let mut #seen_ident = false; });
+                            *stmt = syn::parse_quote! {
+                                if #seen_ident {
+                                    #internal_ident = #init_expr;
+                                } else {
+                                    #seen_ident = true;
+                                };
+                            };
+                        } else {
+                            // Bare declaration moved to hoisted scope; keep no-op here.
+                            let hoisted_decl = if let Some(ty) = ty_opt {
+                                syn::parse_quote! {
+                                    let #mut_token #internal_ident: #ty;
+                                }
+                            } else {
+                                syn::parse_quote! {
+                                    let #mut_token #internal_ident;
+                                }
+                            };
+                            hoisted.push(hoisted_decl);
+                            *stmt = syn::parse_quote! { ; };
+                        }
+
+                        active_bindings.insert(orig_ident.to_string(), internal_ident);
+                        continue;
+                    }
                 }
-                Stmt::Macro(m) if m.mac.path.is_ident("goto") => break,
-                _ => i += 1,
+
+                if let Stmt::Macro(m) = stmt {
+                    if m.mac.path.is_ident("goto") {
+                        before_first_goto = false;
+                    }
+                }
             }
+
+            let mut rewriter = IdentRewriter {
+                active: &active_bindings,
+            };
+            rewriter.visit_stmt_mut(stmt);
         }
     }
 
     // ── Phase 6: replace goto!() with state transitions ───────────────────────
-    let mut replacer = GotoReplacer { label_indices: &label_indices, errors: Vec::new(), debug };
+    let mut replacer = GotoReplacer {
+        label_indices: &label_indices,
+        errors: Vec::new(),
+        debug,
+    };
     let mut transformed: Vec<Vec<Stmt>> = segments
         .into_iter()
         .map(|(_, mut stmts)| {
@@ -442,10 +501,8 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
                         }),
                         Some(Default::default()),
                     );
-                } else {
-                    if let Stmt::Expr(_, semi @ None) = last {
-                        *semi = Some(Default::default());
-                    }
+                } else if let Stmt::Expr(_, semi @ None) = last {
+                    *semi = Some(Default::default());
                 }
             }
         }
@@ -483,7 +540,7 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     func.attrs
         .push(syn::parse_quote!(#[allow(unreachable_code, unused_assignments)]));
 
-    func.block = Box::new(syn::parse_quote! {
+    *func.block = syn::parse_quote! {
         {
             #(#hoisted)*
             let mut __goto_state: usize = 0usize;
@@ -497,7 +554,7 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         }
-    });
+    };
 
     quote! { #func }.into()
 }
@@ -662,6 +719,58 @@ enum ExtractResult {
     Label(Ident),
     Error(syn::Error),
     NotALabel,
+}
+
+struct IdentRewriter<'a> {
+    active: &'a HashMap<String, Ident>,
+}
+
+impl VisitMut for IdentRewriter<'_> {
+    fn visit_expr_path_mut(&mut self, path: &mut syn::ExprPath) {
+        if path.qself.is_none() && path.path.segments.len() == 1 {
+            let seg = &mut path.path.segments[0];
+            if let Some(mapped) = self.active.get(&seg.ident.to_string()) {
+                seg.ident = mapped.clone();
+            }
+        }
+        visit_mut::visit_expr_path_mut(self, path);
+    }
+}
+
+fn as_hoistable_local(stmt: &mut Stmt) -> Option<&mut syn::Local> {
+    match stmt {
+        Stmt::Local(local) => Some(local),
+        _ => None,
+    }
+}
+
+fn extract_simple_local_binding(
+    local: &syn::Local,
+) -> Option<(Ident, Option<syn::Token![mut]>, Option<syn::Type>)> {
+    match &local.pat {
+        syn::Pat::Ident(pat_ident) => Some((pat_ident.ident.clone(), pat_ident.mutability, None)),
+        syn::Pat::Type(pat_ty) => {
+            if let syn::Pat::Ident(pat_ident) = &*pat_ty.pat {
+                Some((
+                    pat_ident.ident.clone(),
+                    pat_ident.mutability,
+                    Some((*pat_ty.ty).clone()),
+                ))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn rewrite_local_initializer(local: &mut syn::Local, active_bindings: &HashMap<String, Ident>) {
+    if let Some(init) = &mut local.init {
+        let mut rewriter = IdentRewriter {
+            active: active_bindings,
+        };
+        rewriter.visit_expr_mut(&mut init.expr);
+    }
 }
 
 fn extract_label(stmt: &Stmt) -> ExtractResult {
