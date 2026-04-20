@@ -98,8 +98,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Comprehensive integration test suite covering all supported patterns.
 - Full API documentation on docs.rs.
 
-[Unreleased]: https://github.com/Yujiro/goto/compare/v0.3.5...HEAD
-[0.3.5]: https://github.com/Yujiro/goto/compare/v0.3.0...v0.3.5
-[0.3.0]: https://github.com/Yujiro/goto/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/Yujiro/goto/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/Yujiro/goto/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ckakkar/goto---Rust/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/ckakkar/goto---Rust/compare/v0.3.0...v0.3.5
+[0.3.0]: https://github.com/ckakkar/goto---Rust/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/ckakkar/goto---Rust/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ckakkar/goto---Rust/releases/tag/v0.1.0

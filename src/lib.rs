@@ -61,8 +61,8 @@ use syn::{
 /// 2. Duplicate label names produce a compile error.
 /// 3. Each label is mapped to its segment index.
 /// 4. In `strict` mode, forward-goto hazards are diagnosed (see below).
-/// 5. `let` bindings before the first `goto!()` in each segment are hoisted above the
-///    state machine so variables remain in scope across segment boundaries.
+/// 5. `let` bindings before the first `goto!()` in the entry segment are hoisted above the
+///    state machine so variables declared before labels remain in scope.
 /// 6. `goto!(name)` is replaced with `{ __goto_state = N; continue 'goto_loop; }`.
 ///    In `debug` mode a `println!` is prepended to each replacement.
 /// 7. Implicit tail expressions are converted to explicit `return` statements.
@@ -97,27 +97,6 @@ use syn::{
 ///     x
 /// }
 /// # fn expensive() -> i32 { 0 }
-/// ```
-///
-/// **Case B — hoisted initializer in a bypassed segment:**
-///
-/// When an entire labelled segment is jumped over, its hoistable `let` bindings are
-/// lifted to function entry and run unconditionally — even on the path that never
-/// visits that segment.
-///
-/// ```compile_fail
-/// use gotobykkrwhofrags::goto;
-///
-/// #[goto(strict)]
-/// fn bad() -> i32 {
-///     goto!(end);
-///     label!(middle);
-///     let _conn = open_db(); // ERROR: hoisted, runs even when skipped
-///     goto!(end);
-///     label!(end);
-///     0
-/// }
-/// # fn open_db() -> i32 { 0 }
 /// ```
 ///
 /// An initializer is considered *non-trivial* (and thus flagged) if it contains any
@@ -213,7 +192,9 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
                         other => {
                             return syn::Error::new(
                                 ident.span(),
-                                format!("unknown attribute `{other}` — expected `debug` or `strict`"),
+                                format!(
+                                    "unknown attribute `{other}` — expected `debug` or `strict`"
+                                ),
                             )
                             .to_compile_error()
                             .into();
@@ -281,40 +262,12 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
         .filter_map(|(i, (label, _))| label.as_ref().map(|l| (l.to_string(), i)))
         .collect();
 
-    // ── Phase 4 (strict): reject non-trivial lets reachable only via forward goto ──
+    // ── Phase 4 (strict): reject non-trivial lets after a forward goto ─────────────
     //
-    // Two cases:
-    //   A. A `let` with a non-trivial init appears *after* a forward goto in the
-    //      same segment — unreachable, but misleading and likely a bug.
-    //   B. A `let` with a non-trivial init appears in a segment that is entirely
-    //      skipped by a forward goto.  The hoisting in Phase 5 would move that
-    //      initializer to function entry, causing a side effect the caller never
-    //      intended to trigger on the skipped path.
+    // A `let` with a non-trivial init appearing *after* a forward goto in the
+    // same segment is unreachable, but misleading and likely a bug.
     if strict {
         let mut strict_errors: Vec<syn::Error> = Vec::new();
-
-        // Helper: collect all forward gotos in a stmt list as (source_seg, target_seg).
-        let forward_gotos_in = |seg_idx: usize, stmts: &[Stmt]| -> Vec<usize> {
-            stmts
-                .iter()
-                .filter_map(|s| {
-                    if let Stmt::Macro(StmtMacro { mac, .. }) = s {
-                        if mac.path.is_ident("goto") {
-                            if let Ok(lbl) = mac.parse_body::<Ident>() {
-                                if let Some(&target) = label_indices.get(&lbl.to_string()) {
-                                    if target > seg_idx {
-                                        return Some(target);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    None
-                })
-                .collect()
-        };
-
-        // Case A: non-trivial `let` appearing after a forward goto in the same segment.
         for (seg_idx, (_, stmts)) in segments.iter().enumerate() {
             let mut past_forward_goto = false;
             for stmt in stmts {
@@ -345,51 +298,17 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        // Case B: non-trivial hoistable `let` in a segment skipped by a forward goto.
-        // The hoisting in Phase 5 would lift the initializer to function entry, running
-        // it even on code paths that never pass through that segment.
-        let mut skipped: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        for (seg_idx, (_, stmts)) in segments.iter().enumerate() {
-            for target in forward_gotos_in(seg_idx, stmts) {
-                for k in (seg_idx + 1)..target {
-                    skipped.insert(k);
-                }
-            }
-        }
-        for k in skipped {
-            let (_, stmts) = &segments[k];
-            for stmt in stmts {
-                match stmt {
-                    // Lets before the first goto in the segment would be hoisted.
-                    Stmt::Macro(StmtMacro { mac, .. }) if mac.path.is_ident("goto") => break,
-                    Stmt::Local(local) => {
-                        if let Some(init) = &local.init {
-                            if has_side_effects(&init.expr) {
-                                strict_errors.push(syn::Error::new_spanned(
-                                    &init.expr,
-                                    "this initializer would be hoisted to function entry and run \
-                                     unconditionally, even though a forward `goto!()` can bypass \
-                                     this segment entirely (`#[goto(strict)]` forbids this)",
-                                ));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
         if !strict_errors.is_empty() {
             return combine_errors(strict_errors);
         }
     }
 
-    // ── Phase 5: hoist let-bindings before the state machine ──────────────────
+    // ── Phase 5: hoist entry-segment let-bindings before the state machine ────
     //
-    // Only hoists lets that appear *before* the first top-level goto!() in each
-    // segment.  Lets after a goto would be unreachable, and hoisting their
-    // initializers would cause side effects to run at function entry — wrong for
-    // forward-goto patterns like `goto!(end); let x = side_effect();`.
+    // Only hoists lets that appear *before* the first top-level goto!() in
+    // segment 0 (the statements before the first label). This preserves the
+    // original per-segment initialization behavior and local shadowing in labeled
+    // segments while still keeping "entry locals" visible across labels.
     //
     // The scan intentionally continues past non-let, non-goto statements (e.g.
     // expression statements), so a `let` that appears *after* an expression but
@@ -397,7 +316,7 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     // expression runs inside its state-machine arm as normal; the variable must
     // be in scope for all subsequent segments, so it has to be hoisted.
     let mut hoisted: Vec<Stmt> = Vec::new();
-    for (_, stmts) in &mut segments {
+    if let Some((_, stmts)) = segments.get_mut(0) {
         let mut i = 0;
         while i < stmts.len() {
             match &stmts[i] {
@@ -412,7 +331,11 @@ pub fn goto(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     // ── Phase 6: replace goto!() with state transitions ───────────────────────
-    let mut replacer = GotoReplacer { label_indices: &label_indices, errors: Vec::new(), debug };
+    let mut replacer = GotoReplacer {
+        label_indices: &label_indices,
+        errors: Vec::new(),
+        debug,
+    };
     let mut transformed: Vec<Vec<Stmt>> = segments
         .into_iter()
         .map(|(_, mut stmts)| {

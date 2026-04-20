@@ -44,7 +44,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gotobykkrwhofrags = "0.3.5"
+gotobykkrwhofrags = "0.3.8"
 ```
 
 ---
