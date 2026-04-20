@@ -7,9 +7,12 @@ authors = ["Cyrus Kakkar <cyruskakkar@gmail.com>"]
 description = "A procedural macro that adds C-style goto to Rust via label!() and goto!() macros."
 license = "MIT"
 repository = "https://github.com/ckakkar/goto---Rust"
+homepage = "https://github.com/ckakkar/goto---Rust"
+documentation = "https://docs.rs/gotobykkrwhofrags"
 keywords = ["goto", "label", "proc-macro", "control-flow", "state-machine"]
 categories = ["development-tools::procedural-macro-helpers", "rust-patterns"]
 readme = "README.md"
+include = ["src/**", "tests/**", "README.md", "CHANGELOG.md", "LICENSE", "Cargo.toml"]
 
 [lib]
 proc-macro = true

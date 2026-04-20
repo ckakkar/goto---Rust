@@ -1,13 +1,13 @@
 use gotobykkrwhofrags::goto;
 
-// Non-trivial `let` in a skipped labeled segment is now valid:
-// only entry-segment locals are hoisted.
+// Case B: non-trivial `let` in a segment entirely skipped by a forward goto.
+// The hoisting would make expensive() run at function entry unconditionally.
 #[goto(strict)]
 fn bad() -> i32 {
     goto!(end);
 
     label!(middle);
-    let _conn = expensive();
+    let _conn = expensive(); //~ ERROR would be hoisted to function entry
     goto!(end);
 
     label!(end);

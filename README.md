@@ -2,6 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/gotobykkrwhofrags.svg)](https://crates.io/crates/gotobykkrwhofrags)
 [![Docs.rs](https://docs.rs/gotobykkrwhofrags/badge.svg)](https://docs.rs/gotobykkrwhofrags)
+[![CI](https://github.com/ckakkar/goto---Rust/actions/workflows/ci.yml/badge.svg)](https://github.com/ckakkar/goto---Rust/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![MSRV: 1.61](https://img.shields.io/badge/MSRV-1.61-orange.svg)](https://blog.rust-lang.org/2022/05/19/Rust-1.61.0.html)
 
@@ -34,6 +35,9 @@ The macro desugars entirely at compile time into a state-machine loop. There is 
 - [Known Limitations](#known-limitations)
 - [Compatibility](#compatibility)
 - [Performance](#performance)
+- [Contributing](#contributing)
+- [Security](#security)
+- [Releasing](#releasing)
 - [License](#license)
 
 ---
@@ -44,7 +48,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gotobykkrwhofrags = "0.3.8"
+gotobykkrwhofrags = "0.4.0"
 ```
 
 ---
@@ -524,6 +528,23 @@ paths or production builds.
 
 The compile-time cost of the macro itself is proportional to the size of the function
 body and is negligible in practice.
+
+---
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup,
+quality gates, testing expectations, and PR guidelines.
+
+## Security
+
+If you discover a security issue, please follow the private reporting process in
+[SECURITY.md](SECURITY.md).
+
+## Releasing
+
+Maintainers should follow [RELEASING.md](RELEASING.md) for versioning, packaging,
+and publish steps.
 
 ---
 

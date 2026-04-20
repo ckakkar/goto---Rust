@@ -206,6 +206,20 @@ fn shadowing_in_labeled_segment() -> i32 {
     acc
 }
 
+// ── Regression: pre-goto locals in labeled segments remain cross-segment ──────
+
+#[goto]
+fn labeled_segment_local_visible_across_segments() -> i32 {
+    goto!(prep);
+
+    label!(prep);
+    let base = 40;
+    goto!(finish);
+
+    label!(finish);
+    base + 2
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -291,6 +305,11 @@ fn test_shadowing_in_labeled_segment() {
     assert_eq!(shadowing_in_labeled_segment(), 14);
 }
 
+#[test]
+fn test_labeled_segment_local_visibility_preserved() {
+    assert_eq!(labeled_segment_local_visible_across_segments(), 42);
+}
+
 // ── Strict mode: valid code still compiles ────────────────────────────────────
 
 #[goto(strict)]
@@ -323,6 +342,6 @@ fn test_strict_valid_code() {
 fn test_strict_compile_errors() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/strict_after_forward_goto.rs");
+    t.compile_fail("tests/ui/strict_skipped_segment.rs");
     t.pass("tests/ui/strict_ok.rs");
-    t.pass("tests/ui/strict_skipped_segment.rs");
 }
